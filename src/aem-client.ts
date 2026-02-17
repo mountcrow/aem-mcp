@@ -4,18 +4,63 @@ const AEM_BASE_URL = process.env.AEM_BASE_URL ?? '';
 const AEM_AUTH_TYPE = process.env.AEM_AUTH_TYPE ?? 'basic'; // 'basic' | 'token'
 const AEM_USERNAME = process.env.AEM_USERNAME ?? '';
 const AEM_PASSWORD = process.env.AEM_PASSWORD ?? '';
-const AEM_ACCESS_TOKEN = process.env.AEM_ACCESS_TOKEN ?? '';
+const AEM_CLIENT_ID = process.env.AEM_CLIENT_ID ?? '';
+const AEM_CLIENT_SECRET = process.env.AEM_CLIENT_SECRET ?? '';
+const AEM_SCOPES = process.env.AEM_SCOPES ?? 'AdobeID,openid,read_organizations,additional_info.projectedProductContext';
+
+const IMS_TOKEN_URL = 'https://ims-na1.adobelogin.com/ims/token/v3';
+
+// Mutable token state — refreshed automatically when expired
+let accessToken: string = process.env.AEM_ACCESS_TOKEN ?? '';
+let tokenExpiresAt: number = 0; // epoch ms; 0 means unknown/expired
 
 if (!AEM_BASE_URL) {
   throw new Error('AEM_BASE_URL environment variable is required');
 }
 
-function getAuthHeader(): string {
+async function refreshAccessToken(): Promise<void> {
+  if (!AEM_CLIENT_ID || !AEM_CLIENT_SECRET) {
+    throw new Error(
+      'AEM_CLIENT_ID and AEM_CLIENT_SECRET are required for automatic token refresh. ' +
+      'Run `npm run get-token` to fetch a token manually, or add credentials to .env.'
+    );
+  }
+
+  const body = new URLSearchParams({
+    grant_type: 'client_credentials',
+    client_id: AEM_CLIENT_ID,
+    client_secret: AEM_CLIENT_SECRET,
+    scope: AEM_SCOPES,
+  });
+
+  const response = await fetch(IMS_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`IMS token refresh failed (${response.status}): ${text}`);
+  }
+
+  const data = await response.json() as { access_token: string; expires_in: number };
+  accessToken = data.access_token;
+  // Subtract 60s buffer so we refresh before the token actually expires
+  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+}
+
+async function ensureValidToken(): Promise<string> {
+  if (!accessToken || Date.now() >= tokenExpiresAt) {
+    await refreshAccessToken();
+  }
+  return accessToken;
+}
+
+async function getAuthHeader(): Promise<string> {
   if (AEM_AUTH_TYPE === 'token') {
-    if (!AEM_ACCESS_TOKEN) {
-      throw new Error('AEM_ACCESS_TOKEN is required when AEM_AUTH_TYPE=token');
-    }
-    return `Bearer ${AEM_ACCESS_TOKEN}`;
+    const token = await ensureValidToken();
+    return `Bearer ${token}`;
   }
   // Default: basic auth
   if (!AEM_USERNAME || !AEM_PASSWORD) {
@@ -33,7 +78,7 @@ async function aemRequest<T>(
   const response = await fetch(url, {
     ...options,
     headers: {
-      Authorization: getAuthHeader(),
+      Authorization: await getAuthHeader(),
       'Content-Type': 'application/json',
       Accept: 'application/json',
       ...options.headers,
@@ -89,7 +134,7 @@ export async function createPage(
     {
       method: 'POST',
       headers: {
-        Authorization: getAuthHeader(),
+        Authorization: await getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),
@@ -119,7 +164,7 @@ export async function updatePageProperties(
     {
       method: 'POST',
       headers: {
-        Authorization: getAuthHeader(),
+        Authorization: await getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),
@@ -146,7 +191,7 @@ export async function deletePage(pagePath: string, force = false): Promise<unkno
     {
       method: 'POST',
       headers: {
-        Authorization: getAuthHeader(),
+        Authorization: await getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),
@@ -256,7 +301,7 @@ export async function createContentFragment(
     {
       method: 'POST',
       headers: {
-        Authorization: getAuthHeader(),
+        Authorization: await getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),
@@ -300,7 +345,7 @@ export async function replicatePage(
     {
       method: 'POST',
       headers: {
-        Authorization: getAuthHeader(),
+        Authorization: await getAuthHeader(),
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData.toString(),

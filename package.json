@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "get-token": "tsx scripts/get-token.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.26.0",
@@ -16,6 +17,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   },
   "engines": {
