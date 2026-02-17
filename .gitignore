@@ -1,0 +1,12 @@
+# Environment / credentials
+.env
+
+# Dependencies
+node_modules/
+
+# Compiled output
+dist/
+
+# Misc
+.DS_Store
+*.js.map
