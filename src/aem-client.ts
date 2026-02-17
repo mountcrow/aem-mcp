@@ -6,7 +6,7 @@ const AEM_USERNAME = process.env.AEM_USERNAME ?? '';
 const AEM_PASSWORD = process.env.AEM_PASSWORD ?? '';
 const AEM_CLIENT_ID = process.env.AEM_CLIENT_ID ?? '';
 const AEM_CLIENT_SECRET = process.env.AEM_CLIENT_SECRET ?? '';
-const AEM_SCOPES = process.env.AEM_SCOPES ?? 'AdobeID,openid,read_organizations,additional_info.projectedProductContext';
+const AEM_SCOPES = process.env.AEM_SCOPES ?? '';
 
 const IMS_TOKEN_URL = 'https://ims-na1.adobelogin.com/ims/token/v3';
 
@@ -19,10 +19,11 @@ if (!AEM_BASE_URL) {
 }
 
 async function refreshAccessToken(): Promise<void> {
-  if (!AEM_CLIENT_ID || !AEM_CLIENT_SECRET) {
+  if (!AEM_CLIENT_ID || !AEM_CLIENT_SECRET || !AEM_SCOPES) {
     throw new Error(
-      'AEM_CLIENT_ID and AEM_CLIENT_SECRET are required for automatic token refresh. ' +
-      'Run `npm run get-token` to fetch a token manually, or add credentials to .env.'
+      'AEM_CLIENT_ID, AEM_CLIENT_SECRET, and AEM_SCOPES are required for automatic token refresh. ' +
+      'Run `npm run get-token` to fetch a token manually, or add all three to .env. ' +
+      'AEM_SCOPES must be copied exactly from Adobe Developer Console → OAuth Server-to-Server → Credential details.'
     );
   }
 
