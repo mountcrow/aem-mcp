@@ -18,6 +18,28 @@ const IMS_TOKEN_URL = 'https://ims-na1.adobelogin.com/ims/token/v3';
 let accessToken: string = process.env.AEM_ACCESS_TOKEN ?? '';
 let tokenExpiresAt: number = 0; // epoch ms; 0 means unknown/expired
 
+// CSRF token cache — AEM requires this header on all mutating requests
+let csrfToken: string = '';
+
+async function fetchCsrfToken(): Promise<string> {
+  try {
+    const response = await fetch(`${getBaseUrl()}/libs/granite/csrf/token.json`, {
+      headers: { Authorization: await getAuthHeader() },
+    });
+    if (!response.ok) return '';
+    const data = await response.json() as { token: string };
+    csrfToken = data.token ?? '';
+  } catch {
+    csrfToken = '';
+  }
+  return csrfToken;
+}
+
+async function getCsrfToken(): Promise<string> {
+  if (!csrfToken) await fetchCsrfToken();
+  return csrfToken;
+}
+
 // Lazy getter so a missing AEM_BASE_URL only fails when a tool is called,
 // not at startup — allowing Claude Desktop to connect first.
 function getBaseUrl(): string {
@@ -83,6 +105,10 @@ async function aemRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  const method = (options.method ?? 'GET').toUpperCase();
+  const isMutation = method !== 'GET' && method !== 'HEAD';
+  const csrf = isMutation ? await getCsrfToken() : '';
+
   const url = `${getBaseUrl()}${path}`;
   const response = await fetch(url, {
     ...options,
@@ -90,6 +116,7 @@ async function aemRequest<T>(
       Authorization: await getAuthHeader(),
       'Content-Type': 'application/json',
       Accept: 'application/json',
+      ...(csrf ? { 'CSRF-Token': csrf } : {}),
       ...options.headers,
     },
   });
@@ -104,6 +131,21 @@ async function aemRequest<T>(
     return response.json() as Promise<T>;
   }
   return response.text() as unknown as T;
+}
+
+// Shared helper for Sling POST Servlet / WCM Command form submissions
+async function aemFormPost(endpoint: string, formData: URLSearchParams): Promise<Response> {
+  const csrf = await getCsrfToken();
+  const response = await fetch(`${getBaseUrl()}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      Authorization: await getAuthHeader(),
+      'Content-Type': 'application/x-www-form-urlencoded',
+      ...(csrf ? { 'CSRF-Token': csrf } : {}),
+    },
+    body: formData.toString(),
+  });
+  return response;
 }
 
 // ─── Pages ───────────────────────────────────────────────────────────────────
@@ -138,17 +180,7 @@ export async function createPage(
     _charset_: 'utf-8',
   });
 
-  const response = await fetch(
-    `${getBaseUrl()}/bin/wcmcommand`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: await getAuthHeader(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    }
-  );
+  const response = await aemFormPost('/bin/wcmcommand', formData);
 
   if (!response.ok) {
     const body = await response.text();
@@ -168,17 +200,7 @@ export async function updatePageProperties(
     }
   }
 
-  const response = await fetch(
-    `${getBaseUrl()}${pagePath}/jcr:content`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: await getAuthHeader(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    }
-  );
+  const response = await aemFormPost(`${pagePath}/jcr:content`, formData);
 
   if (!response.ok) {
     const body = await response.text();
@@ -195,17 +217,7 @@ export async function deletePage(pagePath: string, force = false): Promise<unkno
     _charset_: 'utf-8',
   });
 
-  const response = await fetch(
-    `${getBaseUrl()}/bin/wcmcommand`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: await getAuthHeader(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    }
-  );
+  const response = await aemFormPost('/bin/wcmcommand', formData);
 
   if (!response.ok) {
     const body = await response.text();
@@ -305,17 +317,7 @@ export async function createContentFragment(
 
   const formData = new URLSearchParams({ ...body, _charset_: 'utf-8' });
 
-  const response = await fetch(
-    `${getBaseUrl()}/api/assets${parentPath}/${name}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: await getAuthHeader(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    }
-  );
+  const response = await aemFormPost(`/api/assets${parentPath}/${name}`, formData);
 
   if (!response.ok) {
     const body = await response.text();
@@ -349,17 +351,7 @@ export async function replicatePage(
     _charset_: 'utf-8',
   });
 
-  const response = await fetch(
-    `${getBaseUrl()}/bin/replicate.json`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: await getAuthHeader(),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData.toString(),
-    }
-  );
+  const response = await aemFormPost('/bin/replicate.json', formData);
 
   if (!response.ok) {
     const body = await response.text();
