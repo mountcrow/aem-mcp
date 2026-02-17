@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
+  checkConnection,
   getPage,
   listPages,
   createPage,
@@ -41,6 +42,22 @@ function errorResult(message: string) {
 }
 
 export function registerTools(server: McpServer): void {
+  // ─── Diagnostics ───────────────────────────────────────────────────────────
+
+  server.tool(
+    'aem_check_connection',
+    'Diagnose the AEM connection: tests authentication, identifies the current user and their group memberships, and checks read access to /content and /content/dam. Run this first if you are getting 403 errors.',
+    {},
+    async () => {
+      try {
+        const result = await checkConnection();
+        return textResult(result);
+      } catch (err) {
+        return errorResult(String(err));
+      }
+    }
+  );
+
   // ─── Pages ─────────────────────────────────────────────────────────────────
 
   server.tool(

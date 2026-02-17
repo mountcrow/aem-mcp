@@ -359,3 +359,61 @@ export async function replicatePage(
   }
   return { success: true, path, action };
 }
+
+// ─── Diagnostics ─────────────────────────────────────────────────────────────
+
+export async function checkConnection(): Promise<Record<string, unknown>> {
+  const baseUrl = getBaseUrl();
+  const results: Record<string, unknown> = { baseUrl };
+
+  // 1. Verify the token/auth reaches AEM at all via the CSRF endpoint
+  try {
+    const csrfRes = await fetch(`${baseUrl}/libs/granite/csrf/token.json`, {
+      headers: { Authorization: await getAuthHeader() },
+    });
+    results.csrf = {
+      status: csrfRes.status,
+      ok: csrfRes.ok,
+      token: csrfRes.ok ? ((await csrfRes.json() as { token: string }).token?.slice(0, 8) + '...') : null,
+    };
+  } catch (e) {
+    results.csrf = { error: String(e) };
+  }
+
+  // 2. Identify the authenticated user and their group memberships
+  try {
+    const userRes = await fetch(`${baseUrl}/libs/granite/security/currentuser.json`, {
+      headers: { Authorization: await getAuthHeader() },
+    });
+    if (userRes.ok) {
+      const user = await userRes.json() as Record<string, unknown>;
+      results.currentUser = user;
+    } else {
+      results.currentUser = { status: userRes.status, error: await userRes.text() };
+    }
+  } catch (e) {
+    results.currentUser = { error: String(e) };
+  }
+
+  // 3. Try a basic read of /content (the most common 403 path)
+  try {
+    const contentRes = await fetch(`${baseUrl}/content.1.json`, {
+      headers: { Authorization: await getAuthHeader() },
+    });
+    results.contentAccess = { status: contentRes.status, ok: contentRes.ok };
+  } catch (e) {
+    results.contentAccess = { error: String(e) };
+  }
+
+  // 4. Try a basic read of /content/dam
+  try {
+    const damRes = await fetch(`${baseUrl}/content/dam.1.json`, {
+      headers: { Authorization: await getAuthHeader() },
+    });
+    results.damAccess = { status: damRes.status, ok: damRes.ok };
+  } catch (e) {
+    results.damAccess = { error: String(e) };
+  }
+
+  return results;
+}
