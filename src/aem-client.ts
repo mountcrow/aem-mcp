@@ -1,6 +1,10 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
-const AEM_BASE_URL = process.env.AEM_BASE_URL ?? '';
+// Load .env from the project root regardless of the process working directory.
+// import.meta.url points to dist/aem-client.js, so ../ is the project root.
+dotenv.config({ path: fileURLToPath(new URL('../.env', import.meta.url)) });
+
 const AEM_AUTH_TYPE = process.env.AEM_AUTH_TYPE ?? 'basic'; // 'basic' | 'token'
 const AEM_USERNAME = process.env.AEM_USERNAME ?? '';
 const AEM_PASSWORD = process.env.AEM_PASSWORD ?? '';
@@ -14,8 +18,12 @@ const IMS_TOKEN_URL = 'https://ims-na1.adobelogin.com/ims/token/v3';
 let accessToken: string = process.env.AEM_ACCESS_TOKEN ?? '';
 let tokenExpiresAt: number = 0; // epoch ms; 0 means unknown/expired
 
-if (!AEM_BASE_URL) {
-  throw new Error('AEM_BASE_URL environment variable is required');
+// Lazy getter so a missing AEM_BASE_URL only fails when a tool is called,
+// not at startup — allowing Claude Desktop to connect first.
+function getBaseUrl(): string {
+  const url = process.env.AEM_BASE_URL ?? '';
+  if (!url) throw new Error('AEM_BASE_URL is not set. Add it to your .env file.');
+  return url.replace(/\/$/, '');
 }
 
 async function refreshAccessToken(): Promise<void> {
@@ -75,7 +83,7 @@ async function aemRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${AEM_BASE_URL.replace(/\/$/, '')}${path}`;
+  const url = `${getBaseUrl()}${path}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -131,7 +139,7 @@ export async function createPage(
   });
 
   const response = await fetch(
-    `${AEM_BASE_URL.replace(/\/$/, '')}/bin/wcmcommand`,
+    `${getBaseUrl()}/bin/wcmcommand`,
     {
       method: 'POST',
       headers: {
@@ -161,7 +169,7 @@ export async function updatePageProperties(
   }
 
   const response = await fetch(
-    `${AEM_BASE_URL.replace(/\/$/, '')}${pagePath}/jcr:content`,
+    `${getBaseUrl()}${pagePath}/jcr:content`,
     {
       method: 'POST',
       headers: {
@@ -188,7 +196,7 @@ export async function deletePage(pagePath: string, force = false): Promise<unkno
   });
 
   const response = await fetch(
-    `${AEM_BASE_URL.replace(/\/$/, '')}/bin/wcmcommand`,
+    `${getBaseUrl()}/bin/wcmcommand`,
     {
       method: 'POST',
       headers: {
@@ -298,7 +306,7 @@ export async function createContentFragment(
   const formData = new URLSearchParams({ ...body, _charset_: 'utf-8' });
 
   const response = await fetch(
-    `${AEM_BASE_URL.replace(/\/$/, '')}/api/assets${parentPath}/${name}`,
+    `${getBaseUrl()}/api/assets${parentPath}/${name}`,
     {
       method: 'POST',
       headers: {
@@ -342,7 +350,7 @@ export async function replicatePage(
   });
 
   const response = await fetch(
-    `${AEM_BASE_URL.replace(/\/$/, '')}/bin/replicate.json`,
+    `${getBaseUrl()}/bin/replicate.json`,
     {
       method: 'POST',
       headers: {
