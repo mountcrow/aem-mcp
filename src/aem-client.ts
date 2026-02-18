@@ -362,9 +362,44 @@ export async function replicatePage(
 
 // ─── Diagnostics ─────────────────────────────────────────────────────────────
 
+function decodeJwtClaims(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = Buffer.from(parts[1], 'base64url').toString('utf-8');
+    return JSON.parse(payload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 export async function checkConnection(): Promise<Record<string, unknown>> {
   const baseUrl = getBaseUrl();
   const results: Record<string, unknown> = { baseUrl };
+
+  // 0. Decode the current token to check its claims (exp, aud, org, etc.)
+  if (AEM_AUTH_TYPE === 'token') {
+    const token = accessToken || (process.env.AEM_ACCESS_TOKEN ?? '');
+    if (token) {
+      const claims = decodeJwtClaims(token);
+      if (claims) {
+        const exp = typeof claims.exp === 'number' ? claims.exp : null;
+        results.tokenClaims = {
+          sub: claims.sub,
+          client_id: claims.client_id ?? claims.azp,
+          org_id: claims['https://ims-na1.adobelogin.com/s/ent_aem_cloud_api'] ?? claims.user_id ?? claims.org_id,
+          aud: claims.aud,
+          scope: typeof claims.scope === 'string' ? claims.scope.split(' ').slice(0, 6) : claims.scope,
+          expired: exp !== null ? Date.now() / 1000 > exp : 'unknown',
+          expiresAt: exp !== null ? new Date(exp * 1000).toISOString() : 'unknown',
+        };
+      } else {
+        results.tokenClaims = { error: 'Could not decode token — may not be a JWT' };
+      }
+    } else {
+      results.tokenClaims = { error: 'No access token set in AEM_ACCESS_TOKEN' };
+    }
+  }
 
   // 1. Verify the token/auth reaches AEM at all via the CSRF endpoint
   try {
